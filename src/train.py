@@ -15,6 +15,7 @@ from torch_geometric.loader import DataLoader as PyGloader
 from helper_functions import create_graph_data_lists, multi_acc
 from dataset import BertDataset, collate 
 from sklearn.metrics import classification_report
+from sklearn.utils.class_weight import compute_class_weight
 
 
 def main():
@@ -87,11 +88,16 @@ def main():
     device = torch.device('cuda:{}'.format(args.device) if torch.cuda.is_available() else 'cpu')
  
     torch.cuda.empty_cache()
+    
+    y = df_train['label'].values
+    class_weights=compute_class_weight('balanced', classes = [0, 1, 2] , y = y)
+    class_weights=torch.tensor(class_weights,dtype=torch.float)
+    class_weights = class_weights.to(device)
 
     model = BertEntitiesGraph(args.dropout, args.hidden_size, args.bert_path).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.decay) # leaving L2 reg to 0 so we can use L1 instead
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     logging.info('Training classifier...')
     for epoch in range(1, args.n_epochs + 1):

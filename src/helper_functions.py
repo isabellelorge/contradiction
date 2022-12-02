@@ -43,7 +43,6 @@ def get_cos_sim(entity, embed, embeddings_dict):
 
         return cos
 
-
 # function to create a graph of users and their pro/con cosine sim with entities in their posts
 def get_pos_neg_edges(df, threshold):
 
@@ -58,6 +57,7 @@ def get_pos_neg_edges(df, threshold):
   for i in range(len(df)):
     print(i)
     parent = df['author_parent'].iloc[i]
+ 
     parent_doc = nlp(df['body_parent'].iloc[i])
     # get entities
     parent_ents = set([e.text.lower() for e in parent_doc.ents if e.label_ not in excluded])
@@ -65,7 +65,6 @@ def get_pos_neg_edges(df, threshold):
     child = df['author_child'].iloc[i]
     child_doc = nlp(df['body_child'].iloc[i])
     child_ents = set([e.text.lower() for e in child_doc.ents if e.label_ not in excluded])
-
     # get embeddings
     if parent_ents != set():
       parent_embed = np.mean(sbert_model.encode([s.text for s in list(parent_doc.sents)]), axis = 0)
@@ -95,31 +94,39 @@ def get_pos_neg_edges(df, threshold):
       else:
         users_dict[child][e] = [cos]
 
-    pos_edges = {}
-    neg_edges = {}
+  pos_edges = {}
+  neg_edges = {}
+  cos_diff = []
 
-    for u in users_dict:
-      for e in users_dict[u]:
-        if e_counts[e] > threshold:
-          # put average of cosine sims with entity in pos/neg edges dict
-          mean_cos = np.mean(users_dict[u][e])
-          if mean_cos > 0:
-            if u in pos_edges:
-              pos_edges[u][e] = mean_cos 
-            else:
-              pos_edges[u] = {e: mean_cos}
-          # neg edges
+  # get mean cosine diff (it's heavily biased towards negative)
+  for u in users_dict:
+    for e in users_dict[u]:
+        cos_diff.append(users_dict[u][e])
+
+  mean_cos_diff = np.mean(cos_diff)
+
+  for u in users_dict:
+    for e in users_dict[u]:
+      if e_counts[e] > threshold:
+        # put average of cosine sims with entity in pos/neg edges dict
+        mean_cos = np.mean(users_dict[u][e])
+        if mean_cos > mean_cos_diff:
+          if u in pos_edges:
+            pos_edges[u][e] = mean_cos 
           else:
-            if u in neg_edges:
-              neg_edges[u][e] = mean_cos
-            else:
-              neg_edges[u] =  {e: mean_cos}
+            pos_edges[u] = {e: mean_cos}
+        # neg edges
+        else:
+          if u in neg_edges:
+            neg_edges[u][e] = mean_cos
+          else:
+            neg_edges[u] =  {e: mean_cos}
 
-    #   if u not in pos_edges and u not in neg_edges:
-    #     # create positive edge to neutral entity for isolated nodes
-    #     pos_edges[u] = {'NEUTRAL_ENTITY': 0} # maybe just add on one side otherwise edge issue
+      # if u not in pos_edges and u not in neg_edges:
+      #   # create positive edge to neutral entity for isolated nodes
+      #   pos_edges[u] = {'NEUTRAL_ENTITY': 0} # maybe just add on one side otherwise edge issue
 
-    return pos_edges, neg_edges  
+  return pos_edges, neg_edges  
 
 
 # function to create data list to feed to PyG dataloader using signed bipartite data class
