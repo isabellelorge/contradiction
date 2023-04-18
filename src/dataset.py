@@ -8,11 +8,10 @@ from torch_geometric.data import Data
 from torch.utils.data import Dataset
 from transformers import BertTokenizer
 
-
 # class for bipartite signed graph (need to increment edges differently)
 class SignedBipartiteData(Data):
     def __init__(self,  x_s=None, x_t=None, pos_edge_index=None, neg_edge_index =None, 
-                 pos_edge_weight =None, neg_edge_weight=None):
+                 pos_edge_weight=None, neg_edge_weight=None):
         super().__init__()
         self.pos_edge_index = pos_edge_index
         self.neg_edge_index = neg_edge_index
@@ -27,26 +26,17 @@ class SignedBipartiteData(Data):
           return torch.tensor([[self.x_s.size(0)], [self.x_t.size(0)]])
       else:
           return super().__inc__(key, value, *args, **kwargs)
-
-
-# class for BERT text data
+      
 class BertDataset(Dataset):
 
     def __init__(self, df, bert_path):
         # pos_edges and neg_edges are dict of form {user_id: [entity1, entity2, etc.]}
-        # get data
-        data = df
-        l = ['Republican', 'Brexit', 'BlackLivesMatter', 'climate', 'democrats']
-        # BERt tokenizer
         self.tok = BertTokenizer.from_pretrained(bert_path)
-
        
-
-        # get labels, parent posts, children posts, parent ids, children ids, pos and neg edges
-        self.labels = list(data.label)
-        # self.labels = list(data.subreddit.apply(lambda x: l.index(x)))
-        self.parents = list(data.body_parent.apply(lambda x: self.tok.encode(x)))
-        self.children = list(data.body_child.apply(lambda x: self.tok.encode(x)))
+        # get labels, parent posts, children posts
+        self.labels = list(df.label)
+        self.parents = list(df.body_parent.apply(lambda x: self.tok.encode(x)))
+        self.children = list(df.body_child.apply(lambda x: self.tok.encode(x)))
 
     def __len__(self):
         return len(self.labels)
@@ -76,7 +66,7 @@ def collate(batch):
     max_len_c = max(len(c) for c in children)
     sent_pad_c = torch.zeros((batch_size, max_len_c), dtype=torch.int64)
     masks_pad_c = torch.zeros((batch_size, max_len_c), dtype=torch.int64)
-    segs_pad_c = torch.zeros((batch_size, max_len_c), dtype=torch.int64) # change this to ones to do pair classification?
+    segs_pad_c = torch.zeros((batch_size, max_len_c), dtype=torch.int64)
 
     for i, p in enumerate(parents):
         sent_pad_p[i, :len(p)] = torch.tensor(p)

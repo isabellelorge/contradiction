@@ -11,23 +11,14 @@ from torch_geometric.typing import Adj, PairTensor, OptTensor
 from torch import nn
 import torch.nn.functional as F
 from transformers import BertModel
-from helper_functions import mean_pool
-
-# def gcn_norm(edge_index, edge_weight=None, num_nodes=None):
-#         num_nodes = maybe_num_nodes(edge_index, num_nodes)
-#         row, col = edge_index[0], edge_index[1]
-#         idx = col
-#         deg = scatter_add(edge_weight, idx, dim=0, dim_size=num_nodes)
-#         deg_inv_sqrt = deg.pow_(-0.5)
-#         deg_inv_sqrt.masked_fill_(deg_inv_sqrt == float('inf'), 0)
-#         return edge_index, deg_inv_sqrt[row] * edge_weight * deg_inv_sqrt[col]
+from helper_functions import mean_pool, gcn_norm
 
 
 class SignedConvWeighted(MessagePassing):
     r"""The signed graph convolutional operator from the `"Signed Graph
     Convolutional Network" <https://arxiv.org/abs/1808.06354>`_ paper
 
-   Modified from pytorch geometric implementation at 
+   Modified (added edge weights) from pytorch geometric implementation at 
    https://pytorch-geometric.readthedocs.io/en/latest/_modules/torch_geometric/nn/conv/signed_conv.html
 
     """
@@ -63,14 +54,15 @@ class SignedConvWeighted(MessagePassing):
 
     def forward(self, x: Union[Tensor, PairTensor], pos_edge_index: Adj,
                 neg_edge_index: Adj, pos_edge_weight: OptTensor = None, neg_edge_weight: OptTensor = None):
-        """"""
         if pos_edge_weight == None:
-          pos_edge_weight = torch.ones((len(pos_edge_index)))
+          pos_edge_weight = torch.zeros((len(pos_edge_index)))
         if neg_edge_weight == None:
-          neg_edge_weight = torch.ones((len(neg_edge_index)))
+          neg_edge_weight = torch.zeros((len(neg_edge_index)))
 
-        # pos_edge_index, pos_edge_weight = gcn_norm(pos_edge_index, pos_edge_weight)
-        # neg_edge_index, neg_edge_weight = gcn_norm(neg_edge_index, neg_edge_weight)
+        # # normalising edge weights
+        pos_edge_index, pos_edge_weight = gcn_norm(pos_edge_index, pos_edge_weight)
+        neg_edge_index, neg_edge_weight = gcn_norm(neg_edge_index, neg_edge_weight)
+
 
         if isinstance(x, Tensor):
             x: PairTensor = (x, x)
@@ -122,31 +114,36 @@ class SignedConvWeighted(MessagePassing):
         return (f'{self.__class__.__name__}({self.in_channels}, '
                 f'{self.out_channels}, first_aggr={self.first_aggr})')
 
-
-class BertEntitiesGraph(nn.Module):
+class STEntConv(nn.Module):
     
-    def __init__(self, dropout_rate, hidden_size, bert_path):
+    def __init__(self, dropout_rate1, dropout_rate2, hidden_size, bert_path, model='all_layers'):
         super().__init__()
-        
-        self.dropout_rate = dropout_rate
+        self.dropout_rate1 = dropout_rate1
+        self.dropout_rate2 = dropout_rate2
         self.hidden_size = hidden_size
         self.bert_path = bert_path
+        self.model = model
 
         # encode parent, child with bert 
-        self.bert = BertModel.from_pretrained(bert_path)
-        self.dropout = nn.Dropout(self.dropout_rate)
+        self.bert = BertModel.from_pretrained(self.bert_path)
+        self.dropout1 = nn.Dropout(self.dropout_rate1)
+        self.dropout2 = nn.Dropout(self.dropout_rate2)
 
         self.conv1 = SignedConvWeighted(-1, self.hidden_size, first_aggr=True) # 100*25 => 100*50
-        self.conv1_ent = SignedConvWeighted(-1, self.hidden_size, first_aggr=True) # have a different set of params for entities 
+
         
-        self.conv2 = SignedConvWeighted(-1, self.hidden_size//2, first_aggr=True) 
-        self.conv2_ent =  SignedConvWeighted(-1, self.hidden_size//2, first_aggr=True) 
+        self.conv2 = SignedConvWeighted(-1, self.hidden_size, first_aggr=True)
 
-        self.conv3 = SignedConvWeighted(-1, self.hidden_size//4, first_aggr = True)
-
-
-        self.lin1 = nn.Linear(((self.hidden_size//4)*4), 3)
-        # self.lin2 = nn.Linear(self.hidden_size, 3) # labels = 3
+        if self.model == 'all_layers':
+          self.lin1 = nn.Linear((self.hidden_size*4) + 768*2, 300)
+        if self.model == 'bert_only':
+          self.lin1 = nn.Linear(768*2, 300)
+        if self.model == 'GCN_only':
+          self.lin1 = nn.Linear(self.hidden_size*4, 300)
+        
+        # self.batchnorm = nn.BatchNorm1d((self.hidden_size*4) + 768*2)
+       
+        self.lin2 = nn.Linear(300, 3)
 
     
     def forward(self, parents, parents_masks, parents_segs, 
@@ -158,11 +155,14 @@ class BertEntitiesGraph(nn.Module):
                 children_pos_e, children_neg_e,
                 children_pos_weight, children_neg_weight): 
 
-      bert_parents = mean_pool(self.bert, parents, parents_masks, parents_segs) # 1* 768 mean pooling
-      bert_children= mean_pool(self.bert, children, children_masks, children_segs)
-      # bert_parents_pooled, bert_parent_tokens = self.bert(parents, parents_masks, parents_segs) # 1* 768 mean pooling
-      # bert_children_pooled, bert_children_tokens = self.bert(children, children_masks, children_segs)
+      bert_parents = self.dropout2(mean_pool(self.bert, parents, parents_masks, parents_segs)) # 1* 768 mean pooling
+      bert_children = self.dropout2(mean_pool(self.bert, children, children_masks, children_segs))
+      # bert = torch.cat((bert_parents, bert_children), 1)
+      # bert = self.lin_bert(bert)
+      # bert = F.relu(bert)
+      # bert = self.dropout2(bert)
 
+      # need to reverse source and target to conv entities
       index = torch.LongTensor([1, 0])
       parents_pos_e_reversed = parents_pos_e[index]
       parents_neg_e_reversed = parents_neg_e[index]
@@ -171,68 +171,42 @@ class BertEntitiesGraph(nn.Module):
 
       
       # dim = hidden size *2 because friends vector + enemies vector 
-      # first conv
-      # users < neighbor entities
-      parents_conv1 = F.relu(self.conv1(x =(parents_entities_feat, parents_user_feat), 
+      # first conv users < neighbor entities
+      parents_conv1 = self.dropout1(F.relu(self.conv1(x =(parents_entities_feat, parents_user_feat), 
                                                     pos_edge_index = parents_pos_e, neg_edge_index = parents_neg_e,
-                                                    pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight))
+                                                    pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight)))
 
-      # need to do target to source for entities to message pass because bipartite 
-      parents_ent_conv1 =  F.relu(self.conv1_ent(x =(parents_conv1, parents_entities_feat), # entities < user neighbors (ah but that has no info since all users same...)
-                                                    pos_edge_index = parents_pos_e_reversed, neg_edge_index = parents_neg_e_reversed,
-                                                    pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight))
-     
-      # 2d conv (we are actually getting info from entities who got info from users in 1st conv!)
-      # so maybe we don't need 3d conv? 
-      parents_conv2 = F.relu(self.conv2(x =(parents_ent_conv1, parents_conv1), 
-                                                    pos_edge_index = parents_pos_e, neg_edge_index = parents_neg_e,
-                                                    pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight)) # users < entities < users
-
-      parents_ent_conv2 =  F.relu(self.conv2_ent(x =(parents_conv2, parents_ent_conv1), 
-                                           pos_edge_index = parents_pos_e_reversed, neg_edge_index = parents_neg_e_reversed,
-                                           pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight))
-  
-      # 3d conv 
-      parents_conv3 = self.conv3(x =(parents_ent_conv2, parents_conv2), 
-                                                   pos_edge_index = parents_pos_e, neg_edge_index = parents_neg_e,
-                                                    pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight)
-     
-      # parents_ent_conv3 =  self.dropout(F.relu(self.conv3(x =(parents_conv3, parents_ent_conv2), 
-      #                                          pos_edge_index = parents_pos_e_reversed, neg_edge_index = parents_neg_e_reversed)))
-
-      # print(parents_conv3.shape)
-      # children_conv1 = self.dropout(F.relu(self.conv1(x =(children_entities_feat, children_user_feat), 
-      #                                               pos_edge_index = children_pos_e, neg_edge_index = children_neg_e)))
-      children_conv1 = F.relu(self.conv1(x =(children_entities_feat, children_user_feat), 
+      # parents_ent_conv1 =  F.relu(self.conv1(x =(parents_conv1, parents_entities_feat), 
+      #                                               pos_edge_index = parents_pos_e_reversed, neg_edge_index = parents_neg_e_reversed,
+      #                                               pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight))
+      # # 2d conv 
+      # parents_conv2 = F.relu(self.conv2(x =(parents_ent_conv1, parents_conv1), 
+      #                                               pos_edge_index = parents_pos_e, neg_edge_index = parents_neg_e,
+      #                                               pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight)) # users < entities < users
+      
+      # children
+      children_conv1 = self.dropout1(F.relu(self.conv1(x =(children_entities_feat, children_user_feat), 
                                                     pos_edge_index = children_pos_e, neg_edge_index = children_neg_e,
-                                                    pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
+                                                    pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight)))
     
-      children_ent_conv1 =  F.relu(self.conv1_ent(x =(children_conv1, children_entities_feat), 
-                                                    pos_edge_index = children_pos_e_reversed, neg_edge_index = children_neg_e_reversed,
-                                                    pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
-    
-      # 2d conv
-      children_conv2 = F.relu(self.conv2(x =(children_ent_conv1, children_conv1), 
-                                                    pos_edge_index = children_pos_e, neg_edge_index = children_neg_e,
-                                                    pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
-    
-      children_ent_conv2 =  F.relu(self.conv2_ent(x =(children_conv2, children_ent_conv1), 
-                                                    pos_edge_index = children_pos_e_reversed, neg_edge_index = children_neg_e_reversed,
-                                                    pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
- 
-      # # 3d conv 
-      children_conv3 = self.conv3(x =(children_ent_conv2, children_conv2), 
-                                                   pos_edge_index = children_pos_e, neg_edge_index = children_neg_e,
-                                                    pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight)
-   
-      # children_ent_conv3 =  self.dropout(F.relu(self.conv3(x =(children_conv3, children_ent_conv2), 
-      #                                          pos_edge_index = children_pos_e_reversed, neg_edge_index = children_neg_e_reversed)))
+      # children_ent_conv1 =  F.relu(self.conv1(x =(children_conv1, children_entities_feat), 
+      #                                               pos_edge_index = children_pos_e_reversed, neg_edge_index = children_neg_e_reversed,
+      #                                               pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
+      # # 2d conv
+      # children_conv2 = F.relu(self.conv2(x =(children_ent_conv1, children_conv1), 
+      #                                               pos_edge_index = children_pos_e, neg_edge_index = children_neg_e,
+      #                                               pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
+      
+      if self.model == 'all_layers':
+        x = torch.cat((bert_parents, bert_children, parents_conv1, children_conv1), 1)
+      if self.model == 'bert_only':
+        x = torch.cat((bert_parents, bert_children), 1)
+      if self.model == 'GCN_only':
+        x = torch.cat((parents_conv1, children_conv1), 1)
 
+      x = self.lin1(x)
+      x = F.relu(x)
+      x = self.dropout2(x)
+      x = self.lin2(x)
 
-      all_concat = torch.cat((bert_parents, bert_children, parents_conv3, children_conv3), 1)
-      # print(F.cosine_similarity(parents_conv1, children_conv1))
-      x = self.lin1(all_concat) # linear 1
-      # x = self.dropout(F.relu(x)) # relu then dropout
-      # x = self.lin2(x)
-      # pred = F.log_softmax(x, dim = 1) # no softmax needed with torch CrossEntropy loss
       return x
