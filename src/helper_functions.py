@@ -4,89 +4,28 @@ import numpy as np
 import spacy
 import logging
 import torch
-from gensim.models import Word2Vec
 import nltk
 nltk.download('wordnet')
 nltk.download('omw-1.4')
-from sentence_transformers import SentenceTransformer
-from scipy import spatial
-import numpy as np
 import spacy
-# import locale
-# def getpreferredencoding(do_setlocale = True):
-#     return "UTF-8"
-# locale.getpreferredencoding = getpreferredencoding
 import logging
 import re
 from nltk.stem import WordNetLemmatizer
 from dataset import SignedBipartiteData
-
-!pip install gensim==4.2.0
-!pip install pyg-lib torch-scatter -f https://data.pyg.org/whl/torch-1.13.0+cu116.html
-!pip install torch-sparse -f https://data.pyg.org/whl/torch-1.13.0+cu116.html
-!pip install torch-geometric
-!pip install transformers 
-!python -m spacy download en_core_web_md
-import os
-import locale
-import logging
-import nltk
-nltk.download('wordnet')
-nltk.download('omw-1.4')
-import spacy
-def getpreferredencoding(do_setlocale = True):
-    return "UTF-8"
-locale.getpreferredencoding = getpreferredencoding
-
-import re
-import random
-import json
-import pandas as pd
 import numpy as np
 from scipy import spatial
-from transformers import BertTokenizer, BertModel
-from typing import Union
 from ast import literal_eval
-from gensim.models import Word2Vec
-from nltk.stem import WordNetLemmatizer
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
-from torch_scatter import scatter_add
 import torch
-from torch_geometric.data import Data
+from torch_scatter import scatter_add
 from torch_geometric.utils.num_nodes import maybe_num_nodes
-from torch import Tensor
-from torch_sparse import SparseTensor, matmul
-from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.dense.linear import Linear
-from torch_geometric.typing import Adj, PairTensor, OptTensor
-from torch_geometric.utils import add_self_loops, degree
-from torch_geometric.loader import DataLoader as PyGloader
-import torch.nn.functional as F
-from torch import optim, nn
-from sklearn.metrics import f1_score
-from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.utils.class_weight import compute_class_weight
 
 logging.basicConfig()
 logging.getLogger().setLevel(logging.INFO)
-
-glove_dict = {}
-
-with open(GLOVE_PATH, 'r') as f:
-    for line in f:
-        values = line.split()
-        word = values[0]
-        vector = np.asarray(values[1:], "float32")
-        glove_dict[word] = vector
-
-nlp = spacy.load("en_core_web_md")
-word2vec = Word2Vec.load(WORD2VEC_MODEL_PATH)
-sbert_model = SentenceTransformer('all-mpnet-base-v2')
 lemmatizer = WordNetLemmatizer()
 
 # function to get pro/con cosine similarity between post embedding and entity
-def get_cos_sim(entity, embed, embeddings_dict):
+def get_cos_sim(sbert_model, entity, embed, embeddings_dict):
         # create pro/con sentences
         e_cap = entity.capitalize()
         pro = 'I am for ' + e_cap + '.'
@@ -115,8 +54,7 @@ def get_cos_sim(entity, embed, embeddings_dict):
 
 # function to create a graph of users and their pro/con cosine sim with entities in their posts
 def get_pos_neg_edges(df):
-  l = len(df)
-
+  sbert_model = SentenceTransformer('all-mpnet-base-v2')
   embeddings_dict = {}
   nlp = spacy.load("en_core_web_md")
   excluded = ['CARDINAL', 'DATE', 'ORDINAL', 'WORK_OF_ART', 'PERCENT', 'QUANTITY', 'MONEY' ,'FAC', 'TIME', 'LANGUAGE',
@@ -161,7 +99,7 @@ def get_pos_neg_edges(df):
     for e in list(parent_ents):
       c = []
       for embed in parent_embed:
-        cos_diff = get_cos_sim(e, embed, embeddings_dict)
+        cos_diff = get_cos_sim(sbert_model, e, embed, embeddings_dict)
         if not isinstance(cos_diff, np.floating):
           logging.error('cosine diff is not float')
         c.append(cos_diff)
@@ -176,7 +114,7 @@ def get_pos_neg_edges(df):
     for e in list(child_ents):
       c = []
       for embed in child_embed:
-        cos_diff = get_cos_sim(e, embed, embeddings_dict)
+        cos_diff = get_cos_sim(sbert_model, e, embed, embeddings_dict)
         if not isinstance(cos_diff, np.floating):
           logging.error('cosine diff is not float')
         c.append(cos_diff)
@@ -224,8 +162,8 @@ def get_pos_neg_edges(df):
 
 # function to create data list to feed to PyG dataloader using signed bipartite data class
 # ! try to turn this into a generator and see if dataloader takes output?
-def create_graph_data_lists(df, embeddings_type, embed_size, pos_edges, neg_edges, edge_weights=True):
-  logging.info(f'Using {embeddings_type} embeddings with size {embed_size}')
+def create_graph_data_lists(df, embeddings_dict, embed_size, pos_edges, neg_edges, edge_weights=True):
+  logging.info(f'Using embeddings with size {embed_size}')
   pos_l = sum(len(pos_edges[u]) for u in pos_edges) 
   neg_l = sum(len(neg_edges[u]) for u in neg_edges)
   users = set(list(pos_edges.keys()) + list(neg_edges.keys()))
@@ -236,11 +174,6 @@ def create_graph_data_lists(df, embeddings_type, embed_size, pos_edges, neg_edge
   logging.info(f'Processing {len(users)} users')
   logging.info(f'Processing {len(entities)} entities')
   logging.info(f'Processing {pos_l} positive edges and {neg_l} negative edges')
-
-  if embeddings_type == 'glove':
-    embeddings_dict = glove_dict
-  else:
-    embeddings_dict = word2vec.wv
 
   # get data
   parents_data_list = []
@@ -331,10 +264,6 @@ def create_graph_data_lists(df, embeddings_type, embed_size, pos_edges, neg_edge
     parent_entities_feat = torch.zeros((len(parent_entities), embed_size))
     child_entities_feat = torch.zeros((len(child_entities), embed_size))
     
-    if idx == 0:
-      print('PARENT ENTS', parent_entities)
-      print('CHILD ENTS', child_entities)
-      print('PARENT, CHILD', parent_id, child_id)
     for i, e in enumerate(parent_entities):
       # for idx of entity in list, append entity features to list 
       if '/' in e:
@@ -407,6 +336,7 @@ def mean_pool(bert_model, ids, masks, segs):
     output_bert_pooled = output_bert_pad.sum(dim=1) / n_tokens_pad.unsqueeze(-1).expand(-1, 768)
     return output_bert_pooled
 
+
 def gcn_norm(edge_index, edge_weight=None, num_nodes=None):
     num_nodes = maybe_num_nodes(edge_index, num_nodes)
     row, col = edge_index[0], edge_index[1]
@@ -470,7 +400,7 @@ def normalise_edges(pos_edges, neg_edges):
             pos_edges_filtered[u] =  {e: np.abs(cos-m) for e, cos in pos_edges[u].items()}
     return pos_edges_filtered, neg_edges_filtered
 
-def filter_by_sim(ents, sim):
+def filter_by_sim(word2vec, ents, sim):
     filtered = set()
     for e_orig in ents:
         for t in ['brexit', 'blm', 'climate', 'republican', 'democrat']:
@@ -487,14 +417,15 @@ def filter_by_sim(ents, sim):
               continue
     return list(filtered)
 
-def preprocess_edges_and_datasets(df_train, df_valid, train_pos_edges, train_neg_edges, 
+def preprocess_edges_and_datasets(word2vec, df_train, df_valid, train_pos_edges, train_neg_edges, 
                                   eval_pos_edges, eval_neg_edges, threshold, sim,
                                   lemmatise,
                                   filter_ents_dataset,
                                   full_agreement):
+  
   # get entities and stats
   ents = get_top_entities_by_freq(train_pos_edges, train_neg_edges, threshold=threshold)
-  ents = filter_by_sim(ents, sim=sim)
+  ents = filter_by_sim(word2vec, ents, sim=sim)
   print(f'number of target entities: {len(ents)}')
 
   # normalise edges
@@ -565,4 +496,3 @@ def multi_acc(y_pred, y_true):
     acc = torch.round(acc * 100)
     return acc
 
-    
