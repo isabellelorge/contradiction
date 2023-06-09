@@ -7,7 +7,6 @@ from torch import optim, nn
 from torch.utils.data import DataLoader
 from gensim.models import Word2Vec
 import numpy as np
-from dataset import *
 from models import STEntConv
 import pandas as pd
 from gensim.models import Word2Vec
