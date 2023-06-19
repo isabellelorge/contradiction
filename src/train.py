@@ -21,18 +21,14 @@ import os
 import json
 
 from helper_functions import create_graph_data_lists, multi_acc, preprocess_edges_and_datasets
-from model import STEntConv
-
-
-now = datetime.now()
-date = now.strftime("%Y") + '_' + now.strftime("%m") + '_' + now.strftime("%d")
+from models import STEntConv
 
 
 def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', default=None, type=str, required=True, help='Data directory.')
-    parser.add_argument('--trained_dir', default=None, type=str, required=True, help='Trained model directory.')
+    parser.add_argument('--trained_path', default=None, type=str, required=True, help='Path for trained model.')
     parser.add_argument('--random_seed', default=123, type=int, required=True, help='Random seed.')
     parser.add_argument('--batch_size', default=16, type=int, required=True, help='Batch size.')
     parser.add_argument('--lr', default=0.000003, type=float, required=True, help='Learning rate.')
@@ -42,7 +38,7 @@ def main():
     parser.add_argument('--dropout2', default=0.8, type=float, required=True, help='Dropout rate 2.')
     parser.add_argument('--hidden_size)', default=300, type=int, required=True, help='Size of hidden layer GCN.')
     parser.add_argument('--bert_path', default='bert-base-cased', type=str, required=True, help='Path of BERT model.')
-    parser.add_argument('--word2vec_path', type=str, required=True, help='Path of word2vec model.')
+    parser.add_argument('--word2vec_path', default ='../data/word2vec_lem.model', type=str, required=True, help='Path of word2vec model.')
     parser.add_argument('--subreddit_sim', default=0.5, type=float, required=True, help='Entities similarity threshold subreddits.')
     parser.add_argument('--freq_threshold', default=5000, type=int, required=True, help='Frequency threshold entities.')
     parser.add_argument('--lemmatise', default=True, type=bool, required=True, help='lemmatise entities.')
@@ -114,11 +110,6 @@ def main():
                     hidden_size=hidden_size, bert_path=bert_path, model_name=model_name).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
-    reports = {}
-    indices = {}
-    for sub in list(df_valid_sub['subreddit'].unique()):
-        index = np.array(df_valid_sub[df_valid_sub['subreddit'] == sub].index)
-        indices[sub] = index
 
     print('Train classifier...')
     for epoch in range(1, n_epochs + 1):
@@ -266,28 +257,14 @@ def main():
                             children_pos_e=children_pos_edges, children_neg_e=children_neg_edges,
                             parents_pos_weight=parents_pos_weight, parents_neg_weight=parents_neg_weight,
                             children_pos_weight=children_pos_weight, children_neg_weight=children_neg_weight)
+                    
                     y_pred.append(torch.argmax(output, dim =1).cpu().detach().numpy())
                     y_true.append(labels.cpu().detach().numpy())
-                
+
                 print(classification_report(np.concatenate(y_true, axis = None).flatten(), np.concatenate(y_pred, axis = None).flatten()))
-            
-                for sub in indices:
-                    index = indices[sub]
-                if f'report_{epoch}' in reports:
-                    reports[f'report_{epoch}'][sub] = classification_report(np.concatenate(y_true, axis = None).flatten()[[index]], np.concatenate(y_pred, axis = None).flatten()[[index]], output_dict = True)
-                else: # this CREATES a classification report with JUST each sub 
-                    reports[f'report_{epoch}']= {sub: classification_report(np.concatenate(y_true, axis = None).flatten()[[index]], np.concatenate(y_pred, axis = None).flatten()[[index]], output_dict = True)}
-                reports[f'report_{epoch}']['all'] =  classification_report(np.concatenate(y_true, axis = None).flatten(), np.concatenate(y_pred, axis = None).flatten(), output_dict = True)
 
-                if not os.path.exists(f'/content/drive/MyDrive/results_deba/results_{date}'):
-                    os.makedirs(f'/content/drive/MyDrive/results_deba/results_{date}')
-                with open(f"/content/drive/MyDrive/results_deba/results_{date}/test_{str(test)}_seed_{random_seed}_{model_name}_{filename}.json", "w") as f:
-                    json.dump(reports, f)
                 
-    # torch.save(model.state_dict(), '{}/{}.torch'.format(args.trained_dir, filename))
+    torch.save(model.state_dict(), '{}/{}.torch'.format(args.trained_path))
 
-    if __name__ == '__main__':
-        start_time = time.time()
-        main()
-        print('---------- {:.1f} minutes ----------'.format((time.time() - start_time) / 60))
-        print()
+if __name__ == '__main__':
+    main()

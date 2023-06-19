@@ -26,138 +26,138 @@ lemmatizer = WordNetLemmatizer()
 
 # function to get pro/con cosine similarity between post embedding and entity
 def get_cos_sim(sbert_model, entity, embed, embeddings_dict):
-        # create pro/con sentences
-        e_cap = entity.capitalize()
-        pro = 'I am for ' + e_cap + '.'
-        con = 'I am against ' + e_cap + '.'
+    # create pro/con sentences
+    e_cap = entity.capitalize()
+    pro = 'I am for ' + e_cap + '.'
+    con = 'I am against ' + e_cap + '.'
 
-        # encode pro/con sentences
-        if pro in embeddings_dict:
-          e_for = embeddings_dict[pro]
-        else:
-          e_for = sbert_model.encode(pro)
-          embeddings_dict[pro] = e_for
+    # encode pro/con sentences
+    if pro in embeddings_dict:
+      e_for = embeddings_dict[pro]
+    else:
+      e_for = sbert_model.encode(pro)
+      embeddings_dict[pro] = e_for
 
-        if con in embeddings_dict:
-          e_con = embeddings_dict[con]
-        else:
-          e_con = sbert_model.encode(con)
-          embeddings_dict[con] = e_con
+    if con in embeddings_dict:
+      e_con = embeddings_dict[con]
+    else:
+      e_con = sbert_model.encode(con)
+      embeddings_dict[con] = e_con
 
-        # get cosine sim with pro, cosine sim with con
-        cos_for = 1 - spatial.distance.cosine(embed, e_for)
-        cos_con = 1 - spatial.distance.cosine(embed, e_con)
-        # get difference between pro and con cosine sims
-        cos = cos_for - cos_con
+    # get cosine sim with pro, cosine sim with con
+    cos_for = 1 - spatial.distance.cosine(embed, e_for)
+    cos_con = 1 - spatial.distance.cosine(embed, e_con)
+    # get difference between pro and con cosine sims
+    cos = cos_for - cos_con
 
-        return cos
+    return cos
 
 # function to create a graph of users and their pro/con cosine sim with entities in their posts
 def get_pos_neg_edges(df):
-  sbert_model = SentenceTransformer('all-mpnet-base-v2')
-  embeddings_dict = {}
-  nlp = spacy.load("en_core_web_md")
-  excluded = ['CARDINAL', 'DATE', 'ORDINAL', 'WORK_OF_ART', 'PERCENT', 'QUANTITY', 'MONEY' ,'FAC', 'TIME', 'LANGUAGE',
-             'PRODUCT']
-  users_dict = {u: {} for u in set(df['author_parent'].unique()).union(set(df['author_child'].unique()))}
-  u = len(users_dict)
+    sbert_model = SentenceTransformer('all-mpnet-base-v2')
+    embeddings_dict = {}
+    nlp = spacy.load("en_core_web_md")
+    excluded = ['CARDINAL', 'DATE', 'ORDINAL', 'WORK_OF_ART', 'PERCENT', 'QUANTITY', 'MONEY' ,'FAC', 'TIME', 'LANGUAGE',
+              'PRODUCT']
+    users_dict = {u: {} for u in set(df['author_parent'].unique()).union(set(df['author_child'].unique()))}
+    u = len(users_dict)
 
-  logging.info(f'Number of users: {u}')
+    logging.info(f'Number of users: {u}')
 
-  empty_parents = 0
-  empty_children = 0
+    empty_parents = 0
+    empty_children = 0
 
-  # get posts
-  for i in range(len(df)):
-    print(i)
-    # get entities
-    parent = df['author_parent'].iloc[i]
-    parent_doc = nlp(df['body_parent'].iloc[i])
-    parent_ents = set([re.sub(r'[^\w\s]', '', e.text).lower() for e in parent_doc.ents if e.label_ not in excluded])
+    # get posts
+    for i in range(len(df)):
+      print(i)
+      # get entities
+      parent = df['author_parent'].iloc[i]
+      parent_doc = nlp(df['body_parent'].iloc[i])
+      parent_ents = set([re.sub(r'[^\w\s]', '', e.text).lower() for e in parent_doc.ents if e.label_ not in excluded])
 
-    child = df['author_child'].iloc[i]
-    child_doc = nlp(df['body_child'].iloc[i])
-    child_ents = set([re.sub(r'[^\w\s]', '', e.text).lower() for e in child_doc.ents if e.label_ not in excluded])
+      child = df['author_child'].iloc[i]
+      child_doc = nlp(df['body_child'].iloc[i])
+      child_ents = set([re.sub(r'[^\w\s]', '', e.text).lower() for e in child_doc.ents if e.label_ not in excluded])
 
-    # get embeddings
-    if parent_ents != set():
-      # parent_embed = np.mean(sbert_model.encode([s.text for s in list(parent_doc.sents)]), axis = 0)
-      parent_embed = sbert_model.encode([s.text for s in list(parent_doc.sents)])
-      if len(parent_embed) == 0:
-        logging.error('Empty sentences parent')
-    else:
-      empty_parents+=1
-    if child_ents != set():
-      # child_embed = np.mean(sbert_model.encode([s.text for s in list(child_doc.sents)]), axis = 0)
-      child_embed = sbert_model.encode([s.text for s in list(child_doc.sents)])
-      if len(parent_embed) == 0:
-        logging.error('Empty sentences child')
-    else:
-      empty_children+=1
-
-    # parent entities cos sim
-    for e in list(parent_ents):
-      c = []
-      for embed in parent_embed:
-        cos_diff = get_cos_sim(sbert_model, e, embed, embeddings_dict)
-        if not isinstance(cos_diff, np.floating):
-          logging.error('cosine diff is not float')
-        c.append(cos_diff)
-      cos = np.nanmean(c)
-      e = lemmatizer.lemmatize(e)
-      if e in users_dict[parent]:
-        users_dict[parent][e].append(cos)
+      # get embeddings
+      if parent_ents != set():
+        # parent_embed = np.mean(sbert_model.encode([s.text for s in list(parent_doc.sents)]), axis = 0)
+        parent_embed = sbert_model.encode([s.text for s in list(parent_doc.sents)])
+        if len(parent_embed) == 0:
+          logging.error('Empty sentences parent')
       else:
-        users_dict[parent][e] = [cos]
-
-    # children entities cos sim 
-    for e in list(child_ents):
-      c = []
-      for embed in child_embed:
-        cos_diff = get_cos_sim(sbert_model, e, embed, embeddings_dict)
-        if not isinstance(cos_diff, np.floating):
-          logging.error('cosine diff is not float')
-        c.append(cos_diff)
-      cos = np.nanmean(c)
-      e = lemmatizer.lemmatize(e)
-      if e in users_dict[child]:
-        users_dict[child][e].append(cos)
+        empty_parents+=1
+      if child_ents != set():
+        # child_embed = np.mean(sbert_model.encode([s.text for s in list(child_doc.sents)]), axis = 0)
+        child_embed = sbert_model.encode([s.text for s in list(child_doc.sents)])
+        if len(parent_embed) == 0:
+          logging.error('Empty sentences child')
       else:
-        users_dict[child][e] = [cos]
+        empty_children+=1
 
-  pos_edges = {}
-  neg_edges = {}
-  all_cos= []
-
-  # get mean cosine diff (it's heavily biased towards negative!)
-  for u in users_dict:
-    for e in users_dict[u]:
-      all_cos.extend(users_dict[u][e])
-
-  mean_cos_diff = np.nanmean(all_cos)
-  logging.info(f'Mean cosine diff : {mean_cos_diff}')
-
-  for u in users_dict:
-    for e in users_dict[u]:
-      # put average of cosine sims with entity in pos/neg edges dict
-      mean_cos = np.nanmean(users_dict[u][e])
-      if mean_cos > mean_cos_diff:
-        if u in pos_edges:
-          pos_edges[u][e] = mean_cos 
+      # parent entities cos sim
+      for e in list(parent_ents):
+        c = []
+        for embed in parent_embed:
+          cos_diff = get_cos_sim(sbert_model, e, embed, embeddings_dict)
+          if not isinstance(cos_diff, np.floating):
+            logging.error('cosine diff is not float')
+          c.append(cos_diff)
+        cos = np.nanmean(c)
+        e = lemmatizer.lemmatize(e)
+        if e in users_dict[parent]:
+          users_dict[parent][e].append(cos)
         else:
-          pos_edges[u] = {e: mean_cos}
-      # neg edges
-      else:
-        if u in neg_edges:
-          neg_edges[u][e] = mean_cos
+          users_dict[parent][e] = [cos]
+
+      # children entities cos sim 
+      for e in list(child_ents):
+        c = []
+        for embed in child_embed:
+          cos_diff = get_cos_sim(sbert_model, e, embed, embeddings_dict)
+          if not isinstance(cos_diff, np.floating):
+            logging.error('cosine diff is not float')
+          c.append(cos_diff)
+        cos = np.nanmean(c)
+        e = lemmatizer.lemmatize(e)
+        if e in users_dict[child]:
+          users_dict[child][e].append(cos)
         else:
-          neg_edges[u] =  {e: mean_cos}
+          users_dict[child][e] = [cos]
 
-  pos_l = sum(len(pos_edges[u]) for u in pos_edges) 
-  neg_l = sum(len(neg_edges[u]) for u in neg_edges) 
-  logging.info(f'Extracted {pos_l} positive edges and {neg_l} negative edges')
+    pos_edges = {}
+    neg_edges = {}
+    all_cos= []
 
-  return pos_edges, neg_edges    
+    # get mean cosine diff (it's heavily biased towards negative!)
+    for u in users_dict:
+      for e in users_dict[u]:
+        all_cos.extend(users_dict[u][e])
+
+    mean_cos_diff = np.nanmean(all_cos)
+    logging.info(f'Mean cosine diff : {mean_cos_diff}')
+
+    for u in users_dict:
+      for e in users_dict[u]:
+        # put average of cosine sims with entity in pos/neg edges dict
+        mean_cos = np.nanmean(users_dict[u][e])
+        if mean_cos > mean_cos_diff:
+          if u in pos_edges:
+            pos_edges[u][e] = mean_cos 
+          else:
+            pos_edges[u] = {e: mean_cos}
+        # neg edges
+        else:
+          if u in neg_edges:
+            neg_edges[u][e] = mean_cos
+          else:
+            neg_edges[u] =  {e: mean_cos}
+
+    pos_l = sum(len(pos_edges[u]) for u in pos_edges) 
+    neg_l = sum(len(neg_edges[u]) for u in neg_edges) 
+    logging.info(f'Extracted {pos_l} positive edges and {neg_l} negative edges')
+
+    return pos_edges, neg_edges 
 
 
 # function to create data list to feed to PyG dataloader using signed bipartite data class
