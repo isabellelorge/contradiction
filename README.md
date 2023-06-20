@@ -9,7 +9,7 @@ At training time, it uses a modified version of the Pytorch-geometric implementa
 ![Alt text](entities_graph.jpg "Entities Graph")
 
 ## Dependencies
-The code requires `Python>=3.10`, `torch>=2.0` and `torch-geometric>=2.3` (for `torch-scatter` and other specific dependencies, follow instructions on the Pytorch geometric website which are tailored to CUDA version)
+The code requires `Python>=3.10`, `torch>=2.0` and `torch-geometric>=2.3` (for `torch-scatter` and other specific dependencies, follow instructions on the Pytorch geometric website which are tailored to CUDA version). It also requires specifically `gensim==4.2.0`.
 
 
 ## Data preparation

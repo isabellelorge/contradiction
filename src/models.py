@@ -131,7 +131,6 @@ class STEntConv(nn.Module):
 
         self.conv1 = SignedConvWeighted(-1, self.hidden_size, first_aggr=True) # 100*25 => 100*50
 
-        
         self.conv2 = SignedConvWeighted(-1, self.hidden_size, first_aggr=True)
 
         if self.model == 'all_layers':
@@ -146,21 +145,17 @@ class STEntConv(nn.Module):
         self.lin2 = nn.Linear(300, 3)
 
     
-    def forward(self, parents, parents_masks, parents_segs, 
-                children, children_masks, children_segs, 
-                parents_user_feat, parents_entities_feat, 
-                children_user_feat, children_entities_feat, 
+    def forward(self, parents, parents_masks, parents_segs,
+                children, children_masks, children_segs,
+                parents_user_feat, parents_entities_feat,
+                children_user_feat, children_entities_feat,
                 parents_pos_e, parents_neg_e,
                 parents_pos_weight, parents_neg_weight,
                 children_pos_e, children_neg_e,
-                children_pos_weight, children_neg_weight): 
+                children_pos_weight, children_neg_weight):
 
       bert_parents = self.dropout2(mean_pool(self.bert, parents, parents_masks, parents_segs)) # 1* 768 mean pooling
       bert_children = self.dropout2(mean_pool(self.bert, children, children_masks, children_segs))
-      # bert = torch.cat((bert_parents, bert_children), 1)
-      # bert = self.lin_bert(bert)
-      # bert = F.relu(bert)
-      # bert = self.dropout2(bert)
 
       # need to reverse source and target to conv entities
       index = torch.LongTensor([1, 0])
@@ -197,8 +192,10 @@ class STEntConv(nn.Module):
                                                     pos_edge_index = children_pos_e, neg_edge_index = children_neg_e,
                                                     pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
       
-      if self.model == 'all_layers':
+      if self.model == 'all_layers' or self.model == 'all_layers_2agg':
         x = torch.cat((bert_parents, bert_children, parents_conv1, children_conv1), 1)
+      if self.model == '2d conv':
+        x = torch.cat((bert_parents, bert_children, parents_conv2, children_conv2), 1)
       if self.model == 'bert_only':
         x = torch.cat((bert_parents, bert_children), 1)
       if self.model == 'GCN_only':

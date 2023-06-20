@@ -229,10 +229,6 @@ def create_graph_data_lists(df, embeddings_dict, embed_size, pos_edges, neg_edge
   children_ents = list(df.child_ents)
 
   for idx in range(len(df)): # for each data point
-    # parent_post = df['body_parent'].iloc[idx]
-    # parent_words = [re.sub(r'[^\w]', '', i.lower()) for i in parent_post.split()]
-    # child_post = df['body_child'].iloc[idx]
-    # child_words = [re.sub(r'[^\w]', '', i.lower()) for i in child_post.split()]
     parent_id = parent_ids[idx]
     child_id = children_ids[idx]
     parent_pos_edges = [[], []]
@@ -243,8 +239,6 @@ def create_graph_data_lists(df, embeddings_dict, embed_size, pos_edges, neg_edge
     child_pos_weight =  []
     child_neg_edges = [[], []]
     child_neg_weight =  []
-    # parent_post_ents = parents_ents[idx]
-    # child_post_ents = children_ents[idx]
       
     # ids with no edges get neutral entity embedding (in pos edges because can't have an entity in both)
     parent_entities = []

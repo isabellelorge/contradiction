@@ -2,9 +2,9 @@
 # !pip install torch-scatter -f https://data.pyg.org/whl/torch-1.12.0+cu113.html
 # !pip install torch-sparse -f https://data.pyg.org/whl/torch-1.12.0+cu113.html
 # !pip install torch-geometric
+# !pip install transformers 
 import torch
 from torch_geometric.data import Data
-# !pip install transformers 
 from torch.utils.data import Dataset
 from transformers import BertTokenizer
 

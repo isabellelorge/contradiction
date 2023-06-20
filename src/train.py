@@ -98,12 +98,13 @@ def main():
     print('SIMILARITY:', sim)
     print('THRESHOLD FREQUENCY:', threshold) # ! need to not use same edge names since modifying them! CAREFUL: this modifies df_train and df_valid
 
-    df_train_sub, df_valid_sub, train_pos_edges_sub, train_neg_edges_sub, eval_pos_edges_sub, eval_neg_edges_sub, class_weights = preprocess_edges_and_datasets(word2vec, df_train, df_valid, 
-                                                                                                                train_pos_edges, train_neg_edges, eval_pos_edges, eval_neg_edges, 
-                                                                                                                threshold=threshold, sim=sim,
-                                                                                                                lemmatise=lemmatise,
-                                                                                                                filter_ents_dataset=filter_ents_dataset,
-                                                                                                                full_agreement=full_agreement)
+    df_train_sub, df_valid_sub,train_pos_edges_sub, train_neg_edges_sub,eval_pos_edges_sub, eval_neg_edges_sub,class_weights = preprocess_edges_and_datasets(
+                                                                                                word2vec, df_train, df_valid, 
+                                                                                                train_pos_edges, train_neg_edges, eval_pos_edges, eval_neg_edges, 
+                                                                                                threshold=threshold, sim=sim,
+                                                                                                lemmatise=lemmatise,
+                                                                                                filter_ents_dataset=filter_ents_dataset,
+                                                                                                full_agreement=full_agreement)
   
     class_weights = class_weights.to(device)
     model = STEntConv(dropout_rate1=dropout_rate1, dropout_rate2=dropout_rate2, 
