@@ -320,7 +320,7 @@ def create_graph_data_lists(df, embeddings_dict, embed_size, pos_edges, neg_edge
     parents_data_list.append(parent_graph)
     children_data_list.append(child_graph)
 
-    return parents_data_list, children_data_list
+  return parents_data_list, children_data_list
 
 
 def mean_pool(bert_model, ids, masks, segs):

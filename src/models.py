@@ -55,9 +55,9 @@ class SignedConvWeighted(MessagePassing):
     def forward(self, x: Union[Tensor, PairTensor], pos_edge_index: Adj,
                 neg_edge_index: Adj, pos_edge_weight: OptTensor = None, neg_edge_weight: OptTensor = None):
         if pos_edge_weight == None:
-          pos_edge_weight = torch.zeros((len(pos_edge_index)))
+          pos_edge_weight = torch.zeros(pos_edge_weight.size())
         if neg_edge_weight == None:
-          neg_edge_weight = torch.zeros((len(neg_edge_index)))
+          neg_edge_weight = torch.zeros(neg_edge_weight.size())
 
         # # normalising edge weights
         pos_edge_index, pos_edge_weight = gcn_norm(pos_edge_index, pos_edge_weight)
@@ -134,15 +134,15 @@ class STEntConv(nn.Module):
         self.conv2 = SignedConvWeighted(-1, self.hidden_size, first_aggr=True)
 
         if self.model == 'all_layers':
-          self.lin1 = nn.Linear((self.hidden_size*4) + 768*2, 300)
+          self.lin1 = nn.Linear((self.hidden_size*4) + 768*2, self.hidden_size)
         if self.model == 'bert_only':
-          self.lin1 = nn.Linear(768*2, 300)
+          self.lin1 = nn.Linear(768*2, self.hidden_size)
         if self.model == 'GCN_only':
-          self.lin1 = nn.Linear(self.hidden_size*4, 300)
+          self.lin1 = nn.Linear(self.hidden_size*4, self.hidden_size)
         
         # self.batchnorm = nn.BatchNorm1d((self.hidden_size*4) + 768*2)
        
-        self.lin2 = nn.Linear(300, 3)
+        self.lin2 = nn.Linear(self.hidden_size, 3)
 
     
     def forward(self, parents, parents_masks, parents_segs,
@@ -171,26 +171,26 @@ class STEntConv(nn.Module):
                                                     pos_edge_index = parents_pos_e, neg_edge_index = parents_neg_e,
                                                     pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight)))
 
-      parents_ent_conv1 =  F.relu(self.conv1(x =(parents_conv1, parents_entities_feat), 
-                                                    pos_edge_index = parents_pos_e_reversed, neg_edge_index = parents_neg_e_reversed,
-                                                    pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight))
-      # 2d conv 
-      parents_conv2 = F.relu(self.conv2(x =(parents_ent_conv1, parents_conv1), 
-                                                    pos_edge_index = parents_pos_e, neg_edge_index = parents_neg_e,
-                                                    pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight)) # users < entities < users
+      # parents_ent_conv1 =  F.relu(self.conv1(x =(parents_conv1, parents_entities_feat), 
+      #                                               pos_edge_index = parents_pos_e_reversed, neg_edge_index = parents_neg_e_reversed,
+      #                                               pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight))
+      # # 2d conv 
+      # parents_conv2 = F.relu(self.conv2(x =(parents_ent_conv1, parents_conv1), 
+      #                                               pos_edge_index = parents_pos_e, neg_edge_index = parents_neg_e,
+      #                                               pos_edge_weight = parents_pos_weight, neg_edge_weight = parents_neg_weight)) # users < entities < users
       
       # children
       children_conv1 = self.dropout1(F.relu(self.conv1(x =(children_entities_feat, children_user_feat), 
                                                     pos_edge_index = children_pos_e, neg_edge_index = children_neg_e,
                                                     pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight)))
     
-      children_ent_conv1 =  F.relu(self.conv1(x =(children_conv1, children_entities_feat), 
-                                                    pos_edge_index = children_pos_e_reversed, neg_edge_index = children_neg_e_reversed,
-                                                    pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
-      # 2d conv
-      children_conv2 = F.relu(self.conv2(x =(children_ent_conv1, children_conv1), 
-                                                    pos_edge_index = children_pos_e, neg_edge_index = children_neg_e,
-                                                    pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
+      # children_ent_conv1 =  F.relu(self.conv1(x =(children_conv1, children_entities_feat), 
+      #                                               pos_edge_index = children_pos_e_reversed, neg_edge_index = children_neg_e_reversed,
+      #                                               pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
+      # # 2d conv
+      # children_conv2 = F.relu(self.conv2(x =(children_ent_conv1, children_conv1), 
+      #                                               pos_edge_index = children_pos_e, neg_edge_index = children_neg_e,
+      #                                               pos_edge_weight = children_pos_weight, neg_edge_weight = children_neg_weight))
       
       if self.model == 'all_layers' or self.model == 'all_layers_2agg':
         x = torch.cat((bert_parents, bert_children, parents_conv1, children_conv1), 1)
