@@ -1,6 +1,6 @@
 # STEntConv
 
-This repo contains code to train STEntConv, a model built to detect whether a social media comment and its reply agree or disagree (or neither) (manuscript currently under review). 
+This repo contains code to train STEntConv, a model built to detect whether a social media comment and its reply agree or disagree (or neither) which was accepted for LREC-COLING 2024. Preprint can be found at https://arxiv.org/abs/2403.15885.  
 
 For each user in the dataset, it extracts the named entities mentioned in all their posts, then creates 'pro' and 'con' sentence embeddings using SBERT and takes the difference between 'pro' and 'con' cosine similarity as the stance of this user towards that particular entity. 
 
